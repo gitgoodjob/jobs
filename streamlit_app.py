@@ -75,31 +75,29 @@ def fetch_jobs(job_title, job_site, date_filter):
     
     return filtered_jobs.reset_index(drop=True)
 
-def extract_keywords(text, max_keywords=10):
-    """
-    Extracts relevant keywords from the provided text using OpenAI.
-    """
-    prompt = (
-        f"Extract the {max_keywords} most relevant keywords from the following text:\n\n{text}\n\n"
-        "Return the keywords as a comma-separated list."
+import openai
+
+# Assuming you're using openai.ChatCompletion
+def extract_keywords(api_key, resume_text, job_description):
+    openai.api_key = api_key
+
+    prompt = f"Extract relevant keywords from the following job description:\n\n{job_description}\n\nThen compare them with the following resume text:\n\n{resume_text}\n\nProvide matched and missing keywords."
+
+    response = openai.ChatCompletion.create(
+        model="gpt-3.5-turbo",
+        messages=[
+            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "user", "content": prompt}
+        ]
     )
-    
-    try:
-        response = openai.Completion.create(
-            engine="text-davinci-003",
-            prompt=prompt,
-            max_tokens=60,
-            temperature=0.5,
-            n=1,
-            stop=None
-        )
-        keywords = response.choices[0].text.strip()
-        # Convert comma-separated string to a list
-        keywords_list = [kw.strip().lower() for kw in keywords.split(',') if kw.strip()]
-        return keywords_list
-    except Exception as e:
-        st.error(f"Error extracting keywords: {e}")
-        return []
+
+    return response['choices'][0]['message']['content']
+
+
+
+keywords_result = extract_keywords(api_key, resume_text, job_description)
+print(keywords_result)
+
 
 def compare_keywords(job_keywords, resume_keywords):
     """
