@@ -1,5 +1,159 @@
 import streamlit as st
+import pandas as pd
+import requests
+import openai
+from datetime import datetime
 
-st.title('🎈 App Name')
+# Set Streamlit page configuration
+st.set_page_config(page_title="Job Search App", layout="wide")
 
-st.write('Hello world!')
+# App title
+st.title("🔍 Job Search App")
+
+# Input fields
+st.sidebar.header("Search Parameters")
+job_title = st.sidebar.text_input("Job Title", value="Product Manager")
+job_site = st.sidebar.selectbox(
+    "Select Job Site",
+    ["icims.com", "greenhouse.io", "lever.co", "indeed.com"]
+)
+date_filter = st.sidebar.date_input(
+    "Posted After",
+    value=datetime.today()
+)
+
+st.sidebar.header("Resume and API Key")
+openai_api_key = st.sidebar.text_input(
+    "OpenAI API Key",
+    type="password",
+    help="Your OpenAI API key is required to extract and compare keywords."
+)
+resume_text = st.sidebar.text_area(
+    "Paste Your Resume Text",
+    height=300,
+    help="Paste the full text of your resume here."
+)
+
+# Search button
+search_button = st.sidebar.button("Search Jobs")
+
+def setup_openai(api_key):
+    openai.api_key = api_key
+
+def fetch_jobs(job_title, job_site, date_filter):
+    """
+    Fetch job listings based on job title, site, and date filter.
+    For demonstration, this function returns mocked data.
+    """
+    # TODO: Integrate with real job search APIs or implement web scraping here.
+    
+    # Mocked job data
+    job_data = [
+        {
+            "job_name": "Product Manager",
+            "company_name": "TechCorp",
+            "date_posted": "2024-08-20",
+            "job_link": "https://www.techcorp.com/jobs/123",
+            "job_description": "We are looking for an experienced Product Manager with skills in agile methodologies, user research, and data analysis."
+        },
+        {
+            "job_name": "Senior Product Manager",
+            "company_name": "InnovateX",
+            "date_posted": "2024-08-18",
+            "job_link": "https://www.innovatex.com/careers/456",
+            "job_description": "Join InnovateX as a Senior Product Manager. Required skills include strategic planning, stakeholder management, and market analysis."
+        },
+        # Add more mocked jobs as needed
+    ]
+    
+    # Convert to DataFrame
+    jobs_df = pd.DataFrame(job_data)
+    
+    # Filter jobs by date
+    jobs_df['date_posted'] = pd.to_datetime(jobs_df['date_posted'])
+    filtered_jobs = jobs_df[jobs_df['date_posted'] >= pd.to_datetime(date_filter)]
+    
+    return filtered_jobs.reset_index(drop=True)
+
+def extract_keywords(text, max_keywords=10):
+    """
+    Extracts relevant keywords from the provided text using OpenAI.
+    """
+    prompt = (
+        f"Extract the {max_keywords} most relevant keywords from the following text:\n\n{text}\n\n"
+        "Return the keywords as a comma-separated list."
+    )
+    
+    try:
+        response = openai.Completion.create(
+            engine="text-davinci-003",
+            prompt=prompt,
+            max_tokens=60,
+            temperature=0.5,
+            n=1,
+            stop=None
+        )
+        keywords = response.choices[0].text.strip()
+        # Convert comma-separated string to a list
+        keywords_list = [kw.strip().lower() for kw in keywords.split(',') if kw.strip()]
+        return keywords_list
+    except Exception as e:
+        st.error(f"Error extracting keywords: {e}")
+        return []
+
+def compare_keywords(job_keywords, resume_keywords):
+    """
+    Compares job description keywords with resume keywords.
+    Returns matched and missing keywords.
+    """
+    matched_keywords = list(set(job_keywords) & set(resume_keywords))
+    missing_keywords = list(set(job_keywords) - set(resume_keywords))
+    return matched_keywords, missing_keywords
+
+def process_and_display_jobs(jobs_df, resume_text):
+    """
+    Processes each job listing to extract and compare keywords,
+    then displays the results in a table.
+    """
+    resume_keywords = extract_keywords(resume_text)
+    
+    if not resume_keywords:
+        st.error("Could not extract keywords from resume. Please check your resume text and API key.")
+        return
+    
+    results = []
+    
+    for index, row in jobs_df.iterrows():
+        job_description = row['job_description']
+        job_keywords = extract_keywords(job_description)
+        
+        matched_keywords, missing_keywords = compare_keywords(job_keywords, resume_keywords)
+        
+        results.append({
+            "Job Name": row['job_name'],
+            "Company Name": row['company_name'],
+            "Date Posted": row['date_posted'].strftime("%Y-%m-%d"),
+            "Job Link": row['job_link'],
+            "Matched Keywords": ", ".join(matched_keywords),
+            "Missing Keywords": ", ".join(missing_keywords)
+        })
+    
+    results_df = pd.DataFrame(results)
+    
+    # Display the results
+    st.subheader("Job Search Results")
+    st.dataframe(results_df)
+
+if search_button:
+    if not openai_api_key:
+        st.error("Please enter your OpenAI API key.")
+    elif not resume_text.strip():
+        st.error("Please enter your resume text.")
+    else:
+        with st.spinner("Processing..."):
+            setup_openai(openai_api_key)
+            jobs_df = fetch_jobs(job_title, job_site, date_filter)
+            if jobs_df.empty:
+                st.warning("No jobs found matching your criteria.")
+            else:
+                process_and_display_jobs(jobs_df, resume_text)
